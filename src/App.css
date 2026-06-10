@@ -1,0 +1,79 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', sans-serif;
+  background: #0f1117;
+  color: #e2e8f0;
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+header { text-align: center; margin-bottom: 2rem; }
+header h1 { font-size: 2rem; color: #63b3ed; }
+header p  { color: #718096; font-size: 0.85rem; margin-top: 0.4rem; }
+
+.card {
+  background: #1a202c;
+  border: 1px solid #2d3748;
+  border-radius: 10px;
+  padding: 1.5rem;
+  margin-bottom: 1.2rem;
+}
+
+.card h2 { font-size: 1rem; color: #90cdf4; margin-bottom: 1rem; }
+
+input[type="text"], input[type="file"], input:not([type]) {
+  width: 100%;
+  background: #2d3748;
+  border: 1px solid #4a5568;
+  color: #e2e8f0;
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+  margin-bottom: 0.7rem;
+  font-size: 0.9rem;
+}
+
+button {
+  background: #3182ce;
+  color: white;
+  border: none;
+  padding: 0.6rem 1.4rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-top: 0.3rem;
+}
+
+button:hover:not(:disabled) { background: #2b6cb0; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.status {
+  background: #2d3748;
+  border-left: 3px solid #63b3ed;
+  padding: 0.7rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1.2rem;
+  font-size: 0.9rem;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid #2d3748;
+  font-size: 0.9rem;
+}
+
+.item span { color: #718096; }
+.empty { color: #4a5568; font-size: 0.9rem; }
+
+.link {
+  color: #63b3ed;
+  cursor: pointer;
+  text-decoration: underline;
+}
