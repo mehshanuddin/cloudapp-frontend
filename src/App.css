@@ -97,54 +97,130 @@ body {
 
 /* ===== APP LAYOUT ===== */
 .db-app {
-  display: flex;
   min-height: 100vh;
-}
-
-.sidebar {
-  width: 260px;
-  background: #FFFFFF;
-  border-right: 1px solid #E4E9EE;
   display: flex;
   flex-direction: column;
-  padding: 1.2rem 1rem;
-  flex-shrink: 0;
 }
 
-.sidebar-logo {
+/* ===== TOP NAVBAR ===== */
+.navbar {
+  height: 56px;
+  background: #FFFFFF;
+  border-bottom: 1px solid #E4E9EE;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.navbar-left {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.5rem 1.2rem;
+  min-width: 160px;
 }
 
-.new-upload-btn {
+.navbar-center {
+  display: flex;
+  align-items: center;
+  gap: 1.8rem;
+  flex: 1;
+  justify-content: center;
+}
+
+.navbar-link {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #5B6B79;
+  cursor: pointer;
+  padding: 0.4rem 0.2rem;
+  border-bottom: 2px solid transparent;
+}
+
+.navbar-link:hover { color: #1A2027; }
+.navbar-link.active { color: #0061FF; border-bottom-color: #0061FF; }
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 160px;
+  justify-content: flex-end;
+}
+
+.nav-upload-btn {
   background: #0061FF;
   color: #fff;
   border: none;
-  padding: 0.7rem;
-  border-radius: 24px;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   cursor: pointer;
-  margin-bottom: 1.2rem;
 }
 
-.new-upload-btn:hover { background: #0050D6; }
+.nav-upload-btn:hover { background: #0050D6; }
 
-.sidebar-nav { flex: 1; }
+.navbar-user { position: relative; cursor: pointer; }
 
-.nav-item {
-  padding: 0.6rem 0.7rem;
-  border-radius: 6px;
-  font-size: 0.9rem;
+.user-dropdown {
+  position: absolute;
+  top: 44px;
+  right: 0;
+  background: #fff;
+  border: 1px solid #E4E9EE;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  width: 200px;
+  padding: 0.8rem;
+  z-index: 200;
+}
+
+.user-dropdown-email {
+  font-size: 0.8rem;
+  color: #1A2027;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.user-dropdown-plan {
+  font-size: 0.72rem;
+  color: #0061FF;
+  font-weight: 700;
+  margin-top: 0.2rem;
+}
+
+.user-dropdown-divider {
+  border-top: 1px solid #E4E9EE;
+  margin: 0.6rem 0;
+}
+
+.user-dropdown-item {
+  font-size: 0.85rem;
   color: #3A4750;
+  padding: 0.3rem 0;
   cursor: pointer;
-  margin-bottom: 0.2rem;
 }
 
-.nav-item:hover { background: #F1F5FB; }
-.nav-item.active { background: #EAF1FF; color: #0061FF; font-weight: 600; }
+.user-dropdown-item:hover { color: #0061FF; }
+
+/* ===== BODY (sidebar + content) ===== */
+.app-body {
+  display: flex;
+  flex: 1;
+}
+
+.sidebar {
+  width: 220px;
+  background: #FFFFFF;
+  border-right: 1px solid #E4E9EE;
+  padding: 1.2rem 1rem;
+  flex-shrink: 0;
+}
 
 .storage-box {
   padding: 0.8rem 0.7rem;
@@ -199,40 +275,6 @@ body {
   letter-spacing: 0.5px;
 }
 
-.sidebar-user {
-  border-top: 1px solid #E4E9EE;
-  padding-top: 0.8rem;
-  margin-top: 0.8rem;
-  text-align: center;
-}
-
-.user-avatar {
-  width: 36px;
-  height: 36px;
-  background: #0061FF;
-  color: #fff;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  margin: 0 auto 0.4rem;
-}
-
-.user-email {
-  font-size: 0.75rem;
-  color: #5B6B79;
-  word-break: break-all;
-  margin-bottom: 0.3rem;
-}
-
-.logout-link {
-  font-size: 0.8rem;
-  color: #0061FF;
-  cursor: pointer;
-  font-weight: 600;
-}
-
 /* ===== MAIN CONTENT ===== */
 .main-content {
   flex: 1;
@@ -240,11 +282,30 @@ body {
   max-width: 1100px;
 }
 
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.2rem;
+}
+
 .topbar h1 {
   font-size: 1.5rem;
   font-weight: 700;
   color: #1A2027;
-  margin-bottom: 1.2rem;
+}
+
+.user-avatar {
+  width: 34px;
+  height: 34px;
+  background: #0061FF;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
 }
 
 .toast {
@@ -370,24 +431,6 @@ body {
   font-weight: 600;
   cursor: pointer;
 }
-
-.record-list {
-  margin-top: 1.2rem;
-  border-top: 1px solid #E4E9EE;
-  padding-top: 0.8rem;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.record-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.5rem 0;
-  font-size: 0.85rem;
-  border-bottom: 1px solid #F1F5FB;
-}
-
-.record-row span { color: #5B6B79; }
 
 /* ===== UPGRADE MODAL ===== */
 .upgrade-modal { width: 560px; text-align: center; }
