@@ -20,6 +20,8 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          CI: false
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
