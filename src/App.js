@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { CognitoUserPool, CognitoUser, AuthenticationDetails } from 'amazon-cognito-identity-js';
 import './App.css';
@@ -10,15 +10,28 @@ const poolData = {
 };
 const userPool = new CognitoUserPool(poolData);
 
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({ email: '', password: '', code: '' });
   const [items, setItems] = useState([]);
+  const [files, setFiles] = useState([]);
   const [form, setForm] = useState({ name: '', description: '' });
   const [file, setFile] = useState(null);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
+  const [storage, setStorage] = useState({ usedBytes: 0, limitBytes: 100 * 1024 * 1024, plan: 'free' });
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const current = userPool.getCurrentUser();
@@ -29,21 +42,43 @@ function App() {
     }
   }, []);
 
-  useEffect(() => { if (user) fetchItems(); }, [user]);
+  useEffect(() => {
+    if (user) {
+      fetchItems();
+      fetchFiles();
+      fetchStorage();
+    }
+  }, [user]);
+
+  const getUserId = () => user ? user.getUsername() : 'anonymous';
 
   const fetchItems = async () => {
     try {
-      const res = await axios.get(`${API}/items`);
+      const res = await axios.get(API + '/items');
       setItems(res.data.items || []);
-    } catch (e) { setStatus('❌ Failed to fetch items'); }
+    } catch (e) { /* silent */ }
+  };
+
+  const fetchFiles = async () => {
+    try {
+      const res = await axios.get(API + '/files?userId=' + encodeURIComponent(getUserId()));
+      setFiles(res.data.files || []);
+    } catch (e) { /* silent */ }
+  };
+
+  const fetchStorage = async () => {
+    try {
+      const res = await axios.get(API + '/storage?userId=' + encodeURIComponent(getUserId()));
+      setStorage(res.data);
+    } catch (e) { /* silent */ }
   };
 
   const handleSignup = () => {
     setLoading(true);
-    userPool.signUp(authForm.email, authForm.password, [], null, (err, result) => {
+    userPool.signUp(authForm.email, authForm.password, [], null, (err) => {
       setLoading(false);
-      if (err) return setStatus(`❌ ${err.message}`);
-      setStatus('✅ Signup successful! Check email for verification code.');
+      if (err) return setStatus(err.message);
+      setStatus('Signup successful! Check email for verification code.');
       setAuthMode('verify');
     });
   };
@@ -51,8 +86,8 @@ function App() {
   const handleVerify = () => {
     const cognitoUser = new CognitoUser({ Username: authForm.email, Pool: userPool });
     cognitoUser.confirmRegistration(authForm.code, true, (err) => {
-      if (err) return setStatus(`❌ ${err.message}`);
-      setStatus('✅ Verified! Please login.');
+      if (err) return setStatus(err.message);
+      setStatus('Verified! Please login.');
       setAuthMode('login');
     });
   };
@@ -63,99 +98,267 @@ function App() {
     const cognitoUser = new CognitoUser({ Username: authForm.email, Pool: userPool });
     cognitoUser.authenticateUser(authDetails, {
       onSuccess: () => { setLoading(false); setUser(cognitoUser); setStatus(''); },
-      onFailure: (err) => { setLoading(false); setStatus(`❌ ${err.message}`); }
+      onFailure: (err) => { setLoading(false); setStatus(err.message); }
     });
   };
 
   const handleLogout = () => {
-    userPool.getCurrentUser()?.signOut();
-    setUser(null); setItems([]);
+    userPool.getCurrentUser() && userPool.getCurrentUser().signOut();
+    setUser(null); setItems([]); setFiles([]);
   };
 
   const handleSubmit = async () => {
-    if (!form.name) return setStatus('⚠️ Name is required');
+    if (!form.name) return setStatus('Name is required');
     setLoading(true);
     try {
-      await axios.post(`${API}/items`, form);
-      setStatus('✅ Item created');
+      await fetch(API + '/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: form.name, description: form.description })
+      });
+      setStatus('Item created successfully');
       setForm({ name: '', description: '' });
+      setShowAddItem(false);
       fetchItems();
-    } catch (e) { setStatus('❌ Error creating item'); }
+    } catch (e) { setStatus('Error creating item'); }
     setLoading(false);
   };
 
-  const handleUpload = async () => {
-    if (!file) return setStatus('⚠️ Select a file first');
+  const doUpload = async (chosenFile) => {
+    if (!chosenFile) return;
     setLoading(true);
+    setStatus('');
     try {
-      const res = await axios.post(`${API}/upload`, { filename: file.name, contentType: file.type });
-      await axios.put(res.data.uploadUrl, file, { headers: { 'Content-Type': file.type } });
-      setStatus(`✅ Uploaded: ${file.name}`);
-    } catch (e) { setStatus('❌ Upload failed'); }
+      const res = await fetch(API + '/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: chosenFile.name,
+          fileType: chosenFile.type,
+          fileSize: chosenFile.size,
+          userId: getUserId()
+        })
+      });
+      const resData = await res.json();
+
+      if (res.status === 403 && resData.needUpgrade) {
+        setShowUpgrade(true);
+        setLoading(false);
+        return;
+      }
+
+      await axios.put(resData.uploadUrl, chosenFile, { headers: { 'Content-Type': chosenFile.type } });
+
+      await fetch(API + '/upload-complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileSize: chosenFile.size, userId: getUserId() })
+      });
+
+      setStatus('Uploaded: ' + chosenFile.name);
+      fetchFiles();
+      fetchStorage();
+    } catch (e) { setStatus('Upload failed'); }
     setLoading(false);
   };
+
+  const handleUpload = () => doUpload(file);
+
+  const handleUpgrade = async () => {
+    setLoading(true);
+    try {
+      await fetch(API + '/upgrade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: getUserId() })
+      });
+      setStatus('Upgraded to Pro plan! You now have 5 GB.');
+      setShowUpgrade(false);
+      fetchStorage();
+    } catch (e) { setStatus('Upgrade failed'); }
+    setLoading(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const dropped = e.dataTransfer.files[0];
+    if (dropped) doUpload(dropped);
+  };
+
+  const percentUsed = Math.min(100, (storage.usedBytes / storage.limitBytes) * 100);
 
   if (!user) return (
-    <div className="app">
-      <header>
-        <h1>☁️ CloudApp</h1>
-        <p>AWS Cloud-Native Demo — DynamoDB · S3 · Lambda · Cognito</p>
-      </header>
-      <div className="card">
-        <h2>{authMode === 'login' ? 'Login' : authMode === 'signup' ? 'Sign Up' : 'Verify Email'}</h2>
-        <input placeholder="Email" value={authForm.email}
+    <div className="auth-page">
+      <div className="auth-card">
+        <div className="auth-logo">
+          <span className="logo-icon">⬚</span>
+          <span className="logo-text">CloudBox</span>
+        </div>
+        <h2 className="auth-title">
+          {authMode === 'login' ? 'Sign in' : authMode === 'signup' ? 'Create an account' : 'Verify your email'}
+        </h2>
+        <input className="auth-input" placeholder="Email" value={authForm.email}
           onChange={e => setAuthForm({ ...authForm, email: e.target.value })} />
-        {authMode !== 'verify' && <input placeholder="Password" type="password" value={authForm.password}
+        {authMode !== 'verify' && <input className="auth-input" placeholder="Password" type="password" value={authForm.password}
           onChange={e => setAuthForm({ ...authForm, password: e.target.value })} />}
-        {authMode === 'verify' && <input placeholder="Verification Code" value={authForm.code}
+        {authMode === 'verify' && <input className="auth-input" placeholder="Verification Code" value={authForm.code}
           onChange={e => setAuthForm({ ...authForm, code: e.target.value })} />}
-        {authMode === 'login' && <button onClick={handleLogin} disabled={loading}>{loading ? '...' : 'Login'}</button>}
-        {authMode === 'signup' && <button onClick={handleSignup} disabled={loading}>{loading ? '...' : 'Sign Up'}</button>}
-        {authMode === 'verify' && <button onClick={handleVerify}>Verify</button>}
-        <p style={{marginTop:'1rem', fontSize:'0.85rem', color:'#718096'}}>
-          {authMode === 'login' ? <span>No account? <span className="link" onClick={() => setAuthMode('signup')}>Sign Up</span></span>
-            : <span>Have account? <span className="link" onClick={() => setAuthMode('login')}>Login</span></span>}
+
+        {authMode === 'login' && <button className="auth-btn" onClick={handleLogin} disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</button>}
+        {authMode === 'signup' && <button className="auth-btn" onClick={handleSignup} disabled={loading}>{loading ? 'Creating...' : 'Create account'}</button>}
+        {authMode === 'verify' && <button className="auth-btn" onClick={handleVerify}>Verify</button>}
+
+        <p className="auth-switch">
+          {authMode === 'login'
+            ? <span>Don't have an account? <span className="auth-link" onClick={() => setAuthMode('signup')}>Sign up</span></span>
+            : <span>Already have an account? <span className="auth-link" onClick={() => setAuthMode('login')}>Sign in</span></span>}
         </p>
-        {status && <div className="status">{status}</div>}
+        {status && <div className="auth-status">{status}</div>}
       </div>
     </div>
   );
 
   return (
-    <div className="app">
-      <header>
-        <h1>☁️ CloudApp</h1>
-        <p>Logged in as <strong>{user.getUsername()}</strong> &nbsp;
-          <span className="link" onClick={handleLogout}>[Logout]</span></p>
-      </header>
+    <div className="db-app">
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <div className="sidebar-logo">
+          <span className="logo-icon">⬚</span>
+          <span className="logo-text">CloudBox</span>
+        </div>
 
-      <section className="card">
-        <h2>Add Item</h2>
-        <input placeholder="Name" value={form.name}
-          onChange={e => setForm({ ...form, name: e.target.value })} />
-        <input placeholder="Description" value={form.description}
-          onChange={e => setForm({ ...form, description: e.target.value })} />
-        <button onClick={handleSubmit} disabled={loading}>{loading ? 'Saving...' : 'Save to DynamoDB'}</button>
-      </section>
+        <button className="new-upload-btn" onClick={() => fileInputRef.current.click()}>
+          + Upload file
+        </button>
+        <input ref={fileInputRef} type="file" style={{ display: 'none' }}
+          onChange={e => doUpload(e.target.files[0])} />
 
-      <section className="card">
-        <h2>Upload File</h2>
-        <input type="file" onChange={e => setFile(e.target.files[0])} />
-        <button onClick={handleUpload} disabled={loading}>{loading ? 'Uploading...' : 'Upload to S3'}</button>
-      </section>
+        <nav className="sidebar-nav">
+          <div className="nav-item active">📁 All files</div>
+          <div className="nav-item" onClick={() => setShowAddItem(true)}>🗂️ Records ({items.length})</div>
+        </nav>
 
-      {status && <div className="status">{status}</div>}
+        <div className="storage-box">
+          <div className="storage-label">
+            <span>{formatBytes(storage.usedBytes)} of {formatBytes(storage.limitBytes)} used</span>
+          </div>
+          <div className="storage-bar">
+            <div className="storage-bar-fill" style={{ width: percentUsed + '%' }}></div>
+          </div>
+          {storage.plan === 'free' ? (
+            <button className="upgrade-btn" onClick={() => setShowUpgrade(true)}>Get more space</button>
+          ) : (
+            <div className="plan-badge">PRO PLAN — 5 GB</div>
+          )}
+        </div>
 
-      <section className="card">
-        <h2>Items ({items.length})</h2>
-        {items.length === 0 ? <p className="empty">No items yet.</p> :
-          items.map(item => (
-            <div key={item.id} className="item">
-              <strong>{item.name}</strong><span>{item.description}</span>
+        <div className="sidebar-user">
+          <div className="user-avatar">{getUserId().charAt(0).toUpperCase()}</div>
+          <div className="user-email">{getUserId()}</div>
+          <span className="logout-link" onClick={handleLogout}>Sign out</span>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <main className="main-content">
+        <div className="topbar">
+          <h1>All files</h1>
+        </div>
+
+        {status && <div className="toast">{status}</div>}
+
+        <div
+          className={"dropzone" + (dragOver ? " dragover" : "")}
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+        >
+          <div className="dropzone-icon">⬆</div>
+          <p>Drag and drop a file here, or</p>
+          <button className="browse-btn" onClick={() => fileInputRef.current.click()} disabled={loading}>
+            {loading ? 'Uploading...' : 'Browse files'}
+          </button>
+        </div>
+
+        <div className="files-section">
+          <div className="files-header">
+            <span>Name</span>
+            <span>Size</span>
+            <span>Modified</span>
+          </div>
+          {files.length === 0 ? (
+            <div className="empty-state">No files yet. Upload your first file above.</div>
+          ) : (
+            files.map((f, idx) => (
+              <div key={idx} className="file-row">
+                <span className="file-name">📄 {f.name}</span>
+                <span className="file-size">{formatBytes(f.size)}</span>
+                <span className="file-date">{new Date(f.lastModified).toLocaleDateString()}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </main>
+
+      {/* Add Item Modal */}
+      {showAddItem && (
+        <div className="modal-overlay" onClick={() => setShowAddItem(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <h2>Add Record</h2>
+            <input className="auth-input" placeholder="Name" value={form.name}
+              onChange={e => setForm({ ...form, name: e.target.value })} />
+            <input className="auth-input" placeholder="Description" value={form.description}
+              onChange={e => setForm({ ...form, description: e.target.value })} />
+            <div className="modal-actions">
+              <button className="modal-btn-secondary" onClick={() => setShowAddItem(false)}>Cancel</button>
+              <button className="auth-btn" onClick={handleSubmit} disabled={loading}>{loading ? 'Saving...' : 'Save'}</button>
             </div>
-          ))}
-        <button onClick={fetchItems}>↻ Refresh</button>
-      </section>
+            {items.length > 0 && (
+              <div className="record-list">
+                {items.map(it => (
+                  <div key={it.id} className="record-row">
+                    <strong>{it.title}</strong><span>{it.description}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Upgrade Modal */}
+      {showUpgrade && (
+        <div className="modal-overlay" onClick={() => setShowUpgrade(false)}>
+          <div className="modal-card upgrade-modal" onClick={e => e.stopPropagation()}>
+            <div className="upgrade-icon">⬚</div>
+            <h2>You're out of space</h2>
+            <p className="upgrade-desc">Upgrade to Pro and get 5 GB of storage for your files.</p>
+
+            <div className="plan-cards">
+              <div className="plan-card">
+                <div className="plan-name">Free</div>
+                <div className="plan-price">$0<span>/mo</span></div>
+                <div className="plan-feature">100 MB storage</div>
+                <div className="plan-feature">Basic file uploads</div>
+                <div className="plan-current">Current plan</div>
+              </div>
+              <div className="plan-card highlighted">
+                <div className="plan-badge-top">RECOMMENDED</div>
+                <div className="plan-name">Pro</div>
+                <div className="plan-price">$9.99<span>/mo</span></div>
+                <div className="plan-feature">5 GB storage</div>
+                <div className="plan-feature">Priority support</div>
+                <div className="plan-feature">No upload limits</div>
+                <button className="auth-btn" onClick={handleUpgrade} disabled={loading}>
+                  {loading ? 'Upgrading...' : 'Upgrade now (Demo)'}
+                </button>
+              </div>
+            </div>
+            <span className="modal-close" onClick={() => setShowUpgrade(false)}>Maybe later</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
