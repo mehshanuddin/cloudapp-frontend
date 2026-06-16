@@ -30,6 +30,8 @@ function App() {
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [activeTab, setActiveTab] = useState('files');
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -124,42 +126,62 @@ function App() {
     setLoading(false);
   };
 
-  const doUpload = async (chosenFile) => {
-    if (!chosenFile) return;
+  const doUploadMultiple = async (fileList) => {
+    const filesArr = Array.from(fileList || []);
+    if (filesArr.length === 0) return;
+
     setLoading(true);
-    setStatus('');
-    try {
-      const res = await fetch(API + '/upload-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: chosenFile.name,
-          fileType: chosenFile.type,
-          fileSize: chosenFile.size,
-          userId: getUserId()
-        })
-      });
-      const resData = await res.json();
+    setStatus('Uploading ' + filesArr.length + ' file(s)...');
 
-      if (res.status === 403 && resData.needUpgrade) {
-        setShowUpgrade(true);
-        setLoading(false);
-        return;
+    let successCount = 0;
+    let failCount = 0;
+    let upgradeNeeded = false;
+
+    for (const f of filesArr) {
+      try {
+        const res = await fetch(API + '/upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: f.name,
+            fileType: f.type,
+            fileSize: f.size,
+            userId: getUserId()
+          })
+        });
+        const resData = await res.json();
+
+        if (res.status === 403 && resData.needUpgrade) {
+          upgradeNeeded = true;
+          failCount++;
+          continue;
+        }
+
+        await axios.put(resData.uploadUrl, f, { headers: { 'Content-Type': f.type } });
+
+        await fetch(API + '/upload-complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileSize: f.size, userId: getUserId() })
+        });
+        successCount++;
+      } catch (e) {
+        failCount++;
       }
+    }
 
-      await axios.put(resData.uploadUrl, chosenFile, { headers: { 'Content-Type': chosenFile.type } });
-
-      await fetch(API + '/upload-complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileSize: chosenFile.size, userId: getUserId() })
-      });
-
-      setStatus('Uploaded: ' + chosenFile.name);
-      fetchFiles();
-      fetchStorage();
-    } catch (e) { setStatus('Upload failed'); }
     setLoading(false);
+    fetchFiles();
+    fetchStorage();
+
+    if (upgradeNeeded) {
+      setShowUpgrade(true);
+      setStatus(successCount + ' uploaded, ' + failCount + ' failed (storage limit reached)');
+    } else if (failCount > 0) {
+      setStatus(successCount + ' uploaded, ' + failCount + ' failed');
+    } else {
+      setStatus(successCount + ' file(s) uploaded successfully');
+    }
   };
 
   const handleUpgrade = async () => {
@@ -180,8 +202,7 @@ function App() {
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
-    const dropped = e.dataTransfer.files[0];
-    if (dropped) doUpload(dropped);
+    doUploadMultiple(e.dataTransfer.files);
   };
 
   const percentUsed = Math.min(100, (storage.usedBytes / storage.limitBytes) * 100);
@@ -219,85 +240,126 @@ function App() {
 
   return (
     <div className="db-app">
-      {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="sidebar-logo">
+      {/* Top Navbar */}
+      <nav className="navbar">
+        <div className="navbar-left">
           <span className="logo-icon">⬚</span>
           <span className="logo-text">CloudBox</span>
         </div>
 
-        <button className="new-upload-btn" onClick={() => fileInputRef.current.click()}>
-          + Upload file
-        </button>
-        <input ref={fileInputRef} type="file" style={{ display: 'none' }}
-          onChange={e => doUpload(e.target.files[0])} />
-
-        <nav className="sidebar-nav">
-          <div className="nav-item active">📁 All files</div>
-          <div className="nav-item" onClick={() => setShowAddItem(true)}>🗂️ Records ({items.length})</div>
-        </nav>
-
-        <div className="storage-box">
-          <div className="storage-label">
-            <span>{formatBytes(storage.usedBytes)} of {formatBytes(storage.limitBytes)} used</span>
-          </div>
-          <div className="storage-bar">
-            <div className="storage-bar-fill" style={{ width: percentUsed + '%' }}></div>
-          </div>
-          {storage.plan === 'free' ? (
-            <button className="upgrade-btn" onClick={() => setShowUpgrade(true)}>Get more space</button>
-          ) : (
-            <div className="plan-badge">PRO PLAN — 5 GB</div>
-          )}
+        <div className="navbar-center">
+          <span className={"navbar-link" + (activeTab === 'files' ? ' active' : '')}
+            onClick={() => setActiveTab('files')}>📁 All files</span>
+          <span className={"navbar-link" + (activeTab === 'records' ? ' active' : '')}
+            onClick={() => setActiveTab('records')}>🗂️ Records ({items.length})</span>
         </div>
 
-        <div className="sidebar-user">
-          <div className="user-avatar">{getUserId().charAt(0).toUpperCase()}</div>
-          <div className="user-email">{getUserId()}</div>
-          <span className="logout-link" onClick={handleLogout}>Sign out</span>
-        </div>
-      </aside>
+        <div className="navbar-right">
+          <button className="nav-upload-btn" onClick={() => fileInputRef.current.click()}>+ Upload</button>
+          <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }}
+            onChange={e => doUploadMultiple(e.target.files)} />
 
-      {/* Main content */}
-      <main className="main-content">
-        <div className="topbar">
-          <h1>All files</h1>
-        </div>
-
-        {status && <div className="toast">{status}</div>}
-
-        <div
-          className={"dropzone" + (dragOver ? " dragover" : "")}
-          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-        >
-          <div className="dropzone-icon">⬆</div>
-          <p>Drag and drop a file here, or</p>
-          <button className="browse-btn" onClick={() => fileInputRef.current.click()} disabled={loading}>
-            {loading ? 'Uploading...' : 'Browse files'}
-          </button>
-        </div>
-
-        <div className="files-section">
-          <div className="files-header">
-            <span>Name</span>
-            <span>Size</span>
-            <span>Modified</span>
-          </div>
-          {files.length === 0 ? (
-            <div className="empty-state">No files yet. Upload your first file above.</div>
-          ) : (
-            files.map((f, idx) => (
-              <div key={idx} className="file-row">
-                <span className="file-name">📄 {f.name}</span>
-                <span className="file-size">{formatBytes(f.size)}</span>
-                <span className="file-date">{new Date(f.lastModified).toLocaleDateString()}</span>
+          <div className="navbar-user" onClick={() => setShowUserMenu(!showUserMenu)}>
+            <div className="user-avatar">{getUserId().charAt(0).toUpperCase()}</div>
+            {showUserMenu && (
+              <div className="user-dropdown">
+                <div className="user-dropdown-email">{getUserId()}</div>
+                <div className="user-dropdown-plan">{storage.plan === 'pro' ? 'Pro Plan' : 'Free Plan'}</div>
+                <div className="user-dropdown-divider"></div>
+                <div className="user-dropdown-item" onClick={handleLogout}>Sign out</div>
               </div>
-            ))
-          )}
+            )}
+          </div>
         </div>
-      </main>
+      </nav>
+
+      <div className="app-body">
+        {/* Sidebar */}
+        <aside className="sidebar">
+          <div className="storage-box">
+            <div className="storage-label">
+              <span>{formatBytes(storage.usedBytes)} of {formatBytes(storage.limitBytes)} used</span>
+            </div>
+            <div className="storage-bar">
+              <div className="storage-bar-fill" style={{ width: percentUsed + '%' }}></div>
+            </div>
+            {storage.plan === 'free' ? (
+              <button className="upgrade-btn" onClick={() => setShowUpgrade(true)}>Get more space</button>
+            ) : (
+              <div className="plan-badge">PRO PLAN — 5 GB</div>
+            )}
+          </div>
+        </aside>
+
+        {/* Main content */}
+        <main className="main-content">
+          <div className="topbar">
+            <h1>{activeTab === 'files' ? 'All files' : 'Records'}</h1>
+            {activeTab === 'records' && (
+              <button className="browse-btn" onClick={() => setShowAddItem(true)}>+ Add record</button>
+            )}
+          </div>
+
+          {status && <div className="toast">{status}</div>}
+
+          {activeTab === 'files' && (
+            <>
+              <div
+                className={"dropzone" + (dragOver ? " dragover" : "")}
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+              >
+                <div className="dropzone-icon">⬆</div>
+                <p>Drag and drop a file here, or</p>
+                <button className="browse-btn" onClick={() => fileInputRef.current.click()} disabled={loading}>
+                  {loading ? 'Uploading...' : 'Browse files'}
+                </button>
+              </div>
+
+              <div className="files-section">
+                <div className="files-header">
+                  <span>Name</span>
+                  <span>Size</span>
+                  <span>Modified</span>
+                </div>
+                {files.length === 0 ? (
+                  <div className="empty-state">No files yet. Upload your first file above.</div>
+                ) : (
+                  files.map((f, idx) => (
+                    <div key={idx} className="file-row">
+                      <span className="file-name">📄 {f.name}</span>
+                      <span className="file-size">{formatBytes(f.size)}</span>
+                      <span className="file-date">{new Date(f.lastModified).toLocaleDateString()}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+
+          {activeTab === 'records' && (
+            <div className="files-section">
+              <div className="files-header">
+                <span>Name</span>
+                <span>Description</span>
+                <span></span>
+              </div>
+              {items.length === 0 ? (
+                <div className="empty-state">No records yet. Add your first record above.</div>
+              ) : (
+                items.map(it => (
+                  <div key={it.id} className="file-row">
+                    <span className="file-name">📝 {it.title}</span>
+                    <span className="file-size">{it.description}</span>
+                    <span></span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </main>
+      </div>
 
       {/* Add Item Modal */}
       {showAddItem && (
@@ -312,15 +374,6 @@ function App() {
               <button className="modal-btn-secondary" onClick={() => setShowAddItem(false)}>Cancel</button>
               <button className="auth-btn" onClick={handleSubmit} disabled={loading}>{loading ? 'Saving...' : 'Save'}</button>
             </div>
-            {items.length > 0 && (
-              <div className="record-list">
-                {items.map(it => (
-                  <div key={it.id} className="record-row">
-                    <strong>{it.title}</strong><span>{it.description}</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       )}
