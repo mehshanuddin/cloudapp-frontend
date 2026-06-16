@@ -24,7 +24,6 @@ function App() {
   const [items, setItems] = useState([]);
   const [files, setFiles] = useState([]);
   const [form, setForm] = useState({ name: '', description: '' });
-  const [file, setFile] = useState(null);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [storage, setStorage] = useState({ usedBytes: 0, limitBytes: 100 * 1024 * 1024, plan: 'free' });
@@ -42,6 +41,7 @@ function App() {
     }
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (user) {
       fetchItems();
@@ -161,8 +161,6 @@ function App() {
     } catch (e) { setStatus('Upload failed'); }
     setLoading(false);
   };
-
-  const handleUpload = () => doUpload(file);
 
   const handleUpgrade = async () => {
     setLoading(true);
