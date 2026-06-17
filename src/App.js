@@ -71,6 +71,31 @@ function App() {
     } catch (e) { /* silent */ }
   };
 
+  const deleteItem = async (itemId) => {
+    if (!window.confirm('Delete this record?')) return;
+    try {
+      await fetch(API + '/items/' + itemId, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: getUserId() })
+      });
+      setStatus('Record deleted');
+      fetchItems();
+    } catch (e) { setStatus('Failed to delete record'); }
+  };
+
+  const deleteFile = async (key) => {
+    if (!window.confirm('Delete this file?')) return;
+    try {
+      await fetch(API + '/files/delete?userId=' + encodeURIComponent(getUserId()) + '&key=' + encodeURIComponent(key), {
+        method: 'DELETE'
+      });
+      setStatus('File deleted');
+      fetchFiles();
+      fetchStorage();
+    } catch (e) { setStatus('Failed to delete file'); }
+  };
+
   const fetchStorage = async () => {
     try {
       const res = await axios.get(API + '/storage?userId=' + encodeURIComponent(getUserId()));
@@ -356,6 +381,7 @@ function App() {
                 <span>Name</span>
                 <span>Size</span>
                 <span>Modified</span>
+                <span></span>
               </div>
               {files.length === 0 ? (
                 <div className="empty-state">No files yet. Upload your first file above.</div>
@@ -365,6 +391,7 @@ function App() {
                     <span className="file-name">📄 {f.name}</span>
                     <span className="file-size">{formatBytes(f.size)}</span>
                     <span className="file-date">{new Date(f.lastModified).toLocaleDateString()}</span>
+                    <span className="row-delete" onClick={() => deleteFile(f.key)} title="Delete file">🗑️</span>
                   </div>
                 ))
               )}
@@ -378,6 +405,7 @@ function App() {
               <span>Name</span>
               <span>Description</span>
               <span></span>
+              <span></span>
             </div>
             {items.length === 0 ? (
               <div className="empty-state">No records yet. Add your first record above.</div>
@@ -387,6 +415,7 @@ function App() {
                   <span className="file-name">📝 {it.title}</span>
                   <span className="file-size">{it.description}</span>
                   <span></span>
+                  <span className="row-delete" onClick={() => deleteItem(it.id)} title="Delete record">🗑️</span>
                 </div>
               ))
             )}
