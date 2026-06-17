@@ -31,7 +31,10 @@ function App() {
   const [showAddItem, setShowAddItem] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [activeTab, setActiveTab] = useState('files');
-  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [card, setCard] = useState({ number: '', name: '', expiry: '', cvc: '' });
+  const [cardErrors, setCardErrors] = useState({});
+  const [paying, setPaying] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -184,19 +187,60 @@ function App() {
     }
   };
 
-  const handleUpgrade = async () => {
-    setLoading(true);
+  const formatCardNumber = (val) => {
+    const digits = val.replace(/\D/g, '').slice(0, 16);
+    return digits.replace(/(.{4})/g, '$1 ').trim();
+  };
+
+  const formatExpiry = (val) => {
+    const digits = val.replace(/\D/g, '').slice(0, 4);
+    if (digits.length <= 2) return digits;
+    return digits.slice(0, 2) + '/' + digits.slice(2);
+  };
+
+  const validateCard = () => {
+    const errs = {};
+    const digits = card.number.replace(/\s/g, '');
+    if (digits.length !== 16) errs.number = 'Card number must be 16 digits';
+    if (!card.name.trim()) errs.name = 'Name on card is required';
+    if (!/^\d{2}\/\d{2}$/.test(card.expiry)) {
+      errs.expiry = 'Use MM/YY format';
+    } else {
+      const [mm, yy] = card.expiry.split('/').map(Number);
+      if (mm < 1 || mm > 12) errs.expiry = 'Invalid month';
+      else {
+        const now = new Date();
+        const expDate = new Date(2000 + yy, mm);
+        if (expDate < now) errs.expiry = 'Card has expired';
+      }
+    }
+    if (!/^\d{3,4}$/.test(card.cvc)) errs.cvc = 'CVC must be 3-4 digits';
+    setCardErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handlePay = async () => {
+    if (!validateCard()) return;
+    setPaying(true);
+    setStatus('');
+    // Simulated payment processing delay
+    await new Promise(resolve => setTimeout(resolve, 1800));
     try {
       await fetch(API + '/upgrade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: getUserId() })
       });
-      setStatus('Upgraded to Pro plan! You now have 5 GB.');
+      setPaying(false);
+      setShowCheckout(false);
       setShowUpgrade(false);
+      setCard({ number: '', name: '', expiry: '', cvc: '' });
+      setStatus('Payment successful! You are now on the Pro plan with 5 GB storage.');
       fetchStorage();
-    } catch (e) { setStatus('Upgrade failed'); }
-    setLoading(false);
+    } catch (e) {
+      setPaying(false);
+      setStatus('Payment failed. Please try again.');
+    }
   };
 
   const handleDrop = (e) => {
@@ -240,126 +284,115 @@ function App() {
 
   return (
     <div className="db-app">
-      {/* Top Navbar */}
-      <nav className="navbar">
-        <div className="navbar-left">
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <div className="sidebar-logo">
           <span className="logo-icon">⬚</span>
           <span className="logo-text">CloudBox</span>
         </div>
 
-        <div className="navbar-center">
-          <span className={"navbar-link" + (activeTab === 'files' ? ' active' : '')}
-            onClick={() => setActiveTab('files')}>📁 All files</span>
-          <span className={"navbar-link" + (activeTab === 'records' ? ' active' : '')}
-            onClick={() => setActiveTab('records')}>🗂️ Records ({items.length})</span>
-        </div>
+        <button className="new-upload-btn" onClick={() => fileInputRef.current.click()}>
+          + Upload file
+        </button>
+        <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }}
+          onChange={e => doUploadMultiple(e.target.files)} />
 
-        <div className="navbar-right">
-          <button className="nav-upload-btn" onClick={() => fileInputRef.current.click()}>+ Upload</button>
-          <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }}
-            onChange={e => doUploadMultiple(e.target.files)} />
+        <nav className="sidebar-nav">
+          <div className={"nav-item" + (activeTab === 'files' ? ' active' : '')}
+            onClick={() => setActiveTab('files')}>📁 All files</div>
+          <div className={"nav-item" + (activeTab === 'records' ? ' active' : '')}
+            onClick={() => setActiveTab('records')}>🗂️ Records ({items.length})</div>
+        </nav>
 
-          <div className="navbar-user" onClick={() => setShowUserMenu(!showUserMenu)}>
-            <div className="user-avatar">{getUserId().charAt(0).toUpperCase()}</div>
-            {showUserMenu && (
-              <div className="user-dropdown">
-                <div className="user-dropdown-email">{getUserId()}</div>
-                <div className="user-dropdown-plan">{storage.plan === 'pro' ? 'Pro Plan' : 'Free Plan'}</div>
-                <div className="user-dropdown-divider"></div>
-                <div className="user-dropdown-item" onClick={handleLogout}>Sign out</div>
-              </div>
-            )}
+        <div className="storage-box">
+          <div className="storage-label">
+            <span>{formatBytes(storage.usedBytes)} of {formatBytes(storage.limitBytes)} used</span>
           </div>
-        </div>
-      </nav>
-
-      <div className="app-body">
-        {/* Sidebar */}
-        <aside className="sidebar">
-          <div className="storage-box">
-            <div className="storage-label">
-              <span>{formatBytes(storage.usedBytes)} of {formatBytes(storage.limitBytes)} used</span>
-            </div>
-            <div className="storage-bar">
-              <div className="storage-bar-fill" style={{ width: percentUsed + '%' }}></div>
-            </div>
-            {storage.plan === 'free' ? (
-              <button className="upgrade-btn" onClick={() => setShowUpgrade(true)}>Get more space</button>
-            ) : (
-              <div className="plan-badge">PRO PLAN — 5 GB</div>
-            )}
+          <div className="storage-bar">
+            <div className="storage-bar-fill" style={{ width: percentUsed + '%' }}></div>
           </div>
-        </aside>
-
-        {/* Main content */}
-        <main className="main-content">
-          <div className="topbar">
-            <h1>{activeTab === 'files' ? 'All files' : 'Records'}</h1>
-            {activeTab === 'records' && (
-              <button className="browse-btn" onClick={() => setShowAddItem(true)}>+ Add record</button>
-            )}
-          </div>
-
-          {status && <div className="toast">{status}</div>}
-
-          {activeTab === 'files' && (
-            <>
-              <div
-                className={"dropzone" + (dragOver ? " dragover" : "")}
-                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleDrop}
-              >
-                <div className="dropzone-icon">⬆</div>
-                <p>Drag and drop a file here, or</p>
-                <button className="browse-btn" onClick={() => fileInputRef.current.click()} disabled={loading}>
-                  {loading ? 'Uploading...' : 'Browse files'}
-                </button>
-              </div>
-
-              <div className="files-section">
-                <div className="files-header">
-                  <span>Name</span>
-                  <span>Size</span>
-                  <span>Modified</span>
-                </div>
-                {files.length === 0 ? (
-                  <div className="empty-state">No files yet. Upload your first file above.</div>
-                ) : (
-                  files.map((f, idx) => (
-                    <div key={idx} className="file-row">
-                      <span className="file-name">📄 {f.name}</span>
-                      <span className="file-size">{formatBytes(f.size)}</span>
-                      <span className="file-date">{new Date(f.lastModified).toLocaleDateString()}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </>
+          {storage.plan === 'free' ? (
+            <button className="upgrade-btn" onClick={() => setShowUpgrade(true)}>Get more space</button>
+          ) : (
+            <div className="plan-badge">PRO PLAN — 5 GB</div>
           )}
+        </div>
 
+        <div className="sidebar-user">
+          <div className="user-avatar">{getUserId().charAt(0).toUpperCase()}</div>
+          <div className="user-email">{getUserId()}</div>
+          <span className="logout-link" onClick={handleLogout}>Sign out</span>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <main className="main-content">
+        <div className="topbar">
+          <h1>{activeTab === 'files' ? 'All files' : 'Records'}</h1>
           {activeTab === 'records' && (
+            <button className="browse-btn" onClick={() => setShowAddItem(true)}>+ Add record</button>
+          )}
+        </div>
+
+        {status && <div className="toast">{status}</div>}
+
+        {activeTab === 'files' && (
+          <>
+            <div
+              className={"dropzone" + (dragOver ? " dragover" : "")}
+              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+            >
+              <div className="dropzone-icon">⬆</div>
+              <p>Drag and drop a file here, or</p>
+              <button className="browse-btn" onClick={() => fileInputRef.current.click()} disabled={loading}>
+                {loading ? 'Uploading...' : 'Browse files'}
+              </button>
+            </div>
+
             <div className="files-section">
               <div className="files-header">
                 <span>Name</span>
-                <span>Description</span>
-                <span></span>
+                <span>Size</span>
+                <span>Modified</span>
               </div>
-              {items.length === 0 ? (
-                <div className="empty-state">No records yet. Add your first record above.</div>
+              {files.length === 0 ? (
+                <div className="empty-state">No files yet. Upload your first file above.</div>
               ) : (
-                items.map(it => (
-                  <div key={it.id} className="file-row">
-                    <span className="file-name">📝 {it.title}</span>
-                    <span className="file-size">{it.description}</span>
-                    <span></span>
+                files.map((f, idx) => (
+                  <div key={idx} className="file-row">
+                    <span className="file-name">📄 {f.name}</span>
+                    <span className="file-size">{formatBytes(f.size)}</span>
+                    <span className="file-date">{new Date(f.lastModified).toLocaleDateString()}</span>
                   </div>
                 ))
               )}
             </div>
-          )}
-        </main>
-      </div>
+          </>
+        )}
+
+        {activeTab === 'records' && (
+          <div className="files-section">
+            <div className="files-header">
+              <span>Name</span>
+              <span>Description</span>
+              <span></span>
+            </div>
+            {items.length === 0 ? (
+              <div className="empty-state">No records yet. Add your first record above.</div>
+            ) : (
+              items.map(it => (
+                <div key={it.id} className="file-row">
+                  <span className="file-name">📝 {it.title}</span>
+                  <span className="file-size">{it.description}</span>
+                  <span></span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </main>
 
       {/* Add Item Modal */}
       {showAddItem && (
@@ -401,12 +434,85 @@ function App() {
                 <div className="plan-feature">5 GB storage</div>
                 <div className="plan-feature">Priority support</div>
                 <div className="plan-feature">No upload limits</div>
-                <button className="auth-btn" onClick={handleUpgrade} disabled={loading}>
-                  {loading ? 'Upgrading...' : 'Upgrade now (Demo)'}
+                <button className="auth-btn" onClick={() => setShowCheckout(true)} disabled={loading}>
+                  Upgrade now
                 </button>
               </div>
             </div>
             <span className="modal-close" onClick={() => setShowUpgrade(false)}>Maybe later</span>
+          </div>
+        </div>
+      )}
+
+      {/* Checkout / Card Payment Modal */}
+      {showCheckout && (
+        <div className="modal-overlay" onClick={() => !paying && setShowCheckout(false)}>
+          <div className="modal-card checkout-modal" onClick={e => e.stopPropagation()}>
+            {paying ? (
+              <div className="paying-state">
+                <div className="spinner"></div>
+                <p>Processing payment...</p>
+              </div>
+            ) : (
+              <>
+                <h2>Upgrade to Pro</h2>
+                <div className="checkout-summary">
+                  <span>Pro Plan (5 GB storage)</span>
+                  <span className="checkout-price">$9.99/mo</span>
+                </div>
+
+                <label className="card-label">Card number</label>
+                <input
+                  className={"auth-input" + (cardErrors.number ? " input-error" : "")}
+                  placeholder="4242 4242 4242 4242"
+                  value={card.number}
+                  maxLength={19}
+                  onChange={e => setCard({ ...card, number: formatCardNumber(e.target.value) })}
+                />
+                {cardErrors.number && <div className="field-error">{cardErrors.number}</div>}
+
+                <label className="card-label">Name on card</label>
+                <input
+                  className={"auth-input" + (cardErrors.name ? " input-error" : "")}
+                  placeholder="Khawaja Mehshan Uddin"
+                  value={card.name}
+                  onChange={e => setCard({ ...card, name: e.target.value })}
+                />
+                {cardErrors.name && <div className="field-error">{cardErrors.name}</div>}
+
+                <div className="card-row">
+                  <div className="card-col">
+                    <label className="card-label">Expiry</label>
+                    <input
+                      className={"auth-input" + (cardErrors.expiry ? " input-error" : "")}
+                      placeholder="MM/YY"
+                      value={card.expiry}
+                      maxLength={5}
+                      onChange={e => setCard({ ...card, expiry: formatExpiry(e.target.value) })}
+                    />
+                    {cardErrors.expiry && <div className="field-error">{cardErrors.expiry}</div>}
+                  </div>
+                  <div className="card-col">
+                    <label className="card-label">CVC</label>
+                    <input
+                      className={"auth-input" + (cardErrors.cvc ? " input-error" : "")}
+                      placeholder="123"
+                      value={card.cvc}
+                      maxLength={4}
+                      onChange={e => setCard({ ...card, cvc: e.target.value.replace(/\D/g, '') })}
+                    />
+                    {cardErrors.cvc && <div className="field-error">{cardErrors.cvc}</div>}
+                  </div>
+                </div>
+
+                <div className="demo-note">This is a demo checkout — no real charge will be made.</div>
+
+                <div className="modal-actions">
+                  <button className="modal-btn-secondary" onClick={() => setShowCheckout(false)}>Cancel</button>
+                  <button className="auth-btn" onClick={handlePay}>Pay $9.99</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
