@@ -308,7 +308,7 @@ body {
 
 .files-header {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-columns: 2fr 1fr 1fr 40px;
   padding: 0.7rem 1.2rem;
   background: #F7F9FC;
   font-size: 0.75rem;
@@ -320,7 +320,7 @@ body {
 
 .file-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-columns: 2fr 1fr 1fr 40px;
   padding: 0.8rem 1.2rem;
   border-top: 1px solid #EFF2F5;
   font-size: 0.88rem;
@@ -330,6 +330,20 @@ body {
 .file-row:hover { background: #F7F9FC; }
 .file-name { color: #1A2027; }
 .file-size, .file-date { color: #5B6B79; }
+
+.row-delete {
+  cursor: pointer;
+  text-align: center;
+  font-size: 0.95rem;
+  opacity: 0.55;
+  border-radius: 6px;
+  padding: 0.3rem;
+}
+
+.row-delete:hover {
+  opacity: 1;
+  background: #FDEDEE;
+}
 
 .empty-state {
   padding: 2rem;
